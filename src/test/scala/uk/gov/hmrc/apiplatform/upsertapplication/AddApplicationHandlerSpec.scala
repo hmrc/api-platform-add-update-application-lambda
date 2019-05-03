@@ -49,7 +49,7 @@ class AddApplicationHandlerSpec extends WordSpecLike with Matchers with MockitoS
   }
 
   "Add Application" should {
-    "create a new API Gateway Usage Plan if the application is new" in new Setup {
+    "create a new Bronze API Gateway Usage Plan if the application is new" in new Setup {
       val sqsEvent = new SQSEvent()
       sqsEvent.setRecords(List(buildAddApplicationRequest(applicationName, "BRONZE")))
 
@@ -60,6 +60,38 @@ class AddApplicationHandlerSpec extends WordSpecLike with Matchers with MockitoS
 
       val capturedRequest: CreateUsagePlanRequest = createUsagePlanRequestCaptor.getValue
       capturedRequest.name() shouldEqual applicationName
+      capturedRequest.throttle().rateLimit() shouldEqual addApplicationHandler.NamedUsagePlans("BRONZE")._1
+      capturedRequest.throttle().burstLimit() shouldEqual addApplicationHandler.NamedUsagePlans("BRONZE")._2
+    }
+
+    "create a new Silver API Gateway Usage Plan if the application is new" in new Setup {
+      val sqsEvent = new SQSEvent()
+      sqsEvent.setRecords(List(buildAddApplicationRequest(applicationName, "SILVER")))
+
+      val createUsagePlanRequestCaptor: ArgumentCaptor[CreateUsagePlanRequest] = ArgumentCaptor.forClass(classOf[CreateUsagePlanRequest])
+      when(mockAPIGatewayClient.createUsagePlan(createUsagePlanRequestCaptor.capture())).thenReturn(CreateUsagePlanResponse.builder().build())
+
+      addApplicationHandler handleInput(sqsEvent, mockContext)
+
+      val capturedRequest: CreateUsagePlanRequest = createUsagePlanRequestCaptor.getValue
+      capturedRequest.name() shouldEqual applicationName
+      capturedRequest.throttle().rateLimit() shouldEqual addApplicationHandler.NamedUsagePlans("SILVER")._1
+      capturedRequest.throttle().burstLimit() shouldEqual addApplicationHandler.NamedUsagePlans("SILVER")._2
+    }
+
+    "create a new Gold API Gateway Usage Plan if the application is new" in new Setup {
+      val sqsEvent = new SQSEvent()
+      sqsEvent.setRecords(List(buildAddApplicationRequest(applicationName, "GOLD")))
+
+      val createUsagePlanRequestCaptor: ArgumentCaptor[CreateUsagePlanRequest] = ArgumentCaptor.forClass(classOf[CreateUsagePlanRequest])
+      when(mockAPIGatewayClient.createUsagePlan(createUsagePlanRequestCaptor.capture())).thenReturn(CreateUsagePlanResponse.builder().build())
+
+      addApplicationHandler handleInput(sqsEvent, mockContext)
+
+      val capturedRequest: CreateUsagePlanRequest = createUsagePlanRequestCaptor.getValue
+      capturedRequest.name() shouldEqual applicationName
+      capturedRequest.throttle().rateLimit() shouldEqual addApplicationHandler.NamedUsagePlans("GOLD")._1
+      capturedRequest.throttle().burstLimit() shouldEqual addApplicationHandler.NamedUsagePlans("GOLD")._2
     }
 
     "throw exception if the event has no messages" in new Setup {
