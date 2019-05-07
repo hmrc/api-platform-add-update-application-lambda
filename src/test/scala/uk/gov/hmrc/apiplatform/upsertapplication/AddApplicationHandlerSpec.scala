@@ -54,8 +54,10 @@ class AddApplicationHandlerSpec extends WordSpecLike with Matchers with MockitoS
 
   "Add Application" should {
     "create a new Bronze API Gateway Usage Plan if the application is new" in new Setup {
+      val usagePlanName = "BRONZE"
+
       val sqsEvent = new SQSEvent()
-      sqsEvent.setRecords(List(buildAddApplicationRequest(applicationName, "BRONZE", serverToken)))
+      sqsEvent.setRecords(List(buildAddApplicationRequest(applicationName, usagePlanName, serverToken)))
 
       val createUsagePlanRequestCaptor: ArgumentCaptor[CreateUsagePlanRequest] = ArgumentCaptor.forClass(classOf[CreateUsagePlanRequest])
       when(mockAPIGatewayClient.createUsagePlan(createUsagePlanRequestCaptor.capture())).thenReturn(CreateUsagePlanResponse.builder().id(usagePlanId).build())
@@ -63,23 +65,25 @@ class AddApplicationHandlerSpec extends WordSpecLike with Matchers with MockitoS
       val createApiKeyRequestCaptor: ArgumentCaptor[CreateApiKeyRequest] = ArgumentCaptor.forClass(classOf[CreateApiKeyRequest])
       when(mockAPIGatewayClient.createApiKey(createApiKeyRequestCaptor.capture())).thenReturn(CreateApiKeyResponse.builder().id(apiKeyId).build())
 
+      val createUsagePlanKeyRequestCaptor: ArgumentCaptor[CreateUsagePlanKeyRequest] = ArgumentCaptor.forClass(classOf[CreateUsagePlanKeyRequest])
+      when(mockAPIGatewayClient.createUsagePlanKey(createUsagePlanKeyRequestCaptor.capture())).thenReturn(CreateUsagePlanKeyResponse.builder().build())
+
       addApplicationHandler handleInput(sqsEvent, mockContext)
 
-      val capturedUsagePlanRequest: CreateUsagePlanRequest = createUsagePlanRequestCaptor.getValue
-      capturedUsagePlanRequest.name() shouldEqual applicationName
-      capturedUsagePlanRequest.throttle().rateLimit() shouldEqual addApplicationHandler.NamedUsagePlans("BRONZE")._1
-      capturedUsagePlanRequest.throttle().burstLimit() shouldEqual addApplicationHandler.NamedUsagePlans("BRONZE")._2
-
-      val capturedAPIKeyRequest: CreateApiKeyRequest = createApiKeyRequestCaptor.getValue
-      capturedAPIKeyRequest.name() shouldEqual applicationName
-      capturedAPIKeyRequest.value() shouldEqual serverToken
-      capturedAPIKeyRequest.enabled() shouldBe true
-      capturedAPIKeyRequest.generateDistinctId() shouldBe false
+      createUsagePlanRequestCorrectlyFormatted(
+        createUsagePlanRequestCaptor,
+        applicationName,
+        addApplicationHandler.NamedUsagePlans(usagePlanName)._1,
+        addApplicationHandler.NamedUsagePlans(usagePlanName)._2)
+      createAPIKeyRequestCorrectlyFormatted(createApiKeyRequestCaptor, applicationName, serverToken)
+      createUsagePlanKeyRequestCorrectlyFormatted(createUsagePlanKeyRequestCaptor, usagePlanId, apiKeyId)
     }
 
     "create a new Silver API Gateway Usage Plan if the application is new" in new Setup {
+      val usagePlanName = "SILVER"
+
       val sqsEvent = new SQSEvent()
-      sqsEvent.setRecords(List(buildAddApplicationRequest(applicationName, "SILVER", serverToken)))
+      sqsEvent.setRecords(List(buildAddApplicationRequest(applicationName, usagePlanName, serverToken)))
 
       val createUsagePlanRequestCaptor: ArgumentCaptor[CreateUsagePlanRequest] = ArgumentCaptor.forClass(classOf[CreateUsagePlanRequest])
       when(mockAPIGatewayClient.createUsagePlan(createUsagePlanRequestCaptor.capture())).thenReturn(CreateUsagePlanResponse.builder().id(usagePlanId).build())
@@ -87,23 +91,25 @@ class AddApplicationHandlerSpec extends WordSpecLike with Matchers with MockitoS
       val createApiKeyRequestCaptor: ArgumentCaptor[CreateApiKeyRequest] = ArgumentCaptor.forClass(classOf[CreateApiKeyRequest])
       when(mockAPIGatewayClient.createApiKey(createApiKeyRequestCaptor.capture())).thenReturn(CreateApiKeyResponse.builder().id(apiKeyId).build())
 
+      val createUsagePlanKeyRequestCaptor: ArgumentCaptor[CreateUsagePlanKeyRequest] = ArgumentCaptor.forClass(classOf[CreateUsagePlanKeyRequest])
+      when(mockAPIGatewayClient.createUsagePlanKey(createUsagePlanKeyRequestCaptor.capture())).thenReturn(CreateUsagePlanKeyResponse.builder().build())
+
       addApplicationHandler handleInput(sqsEvent, mockContext)
 
-      val capturedRequest: CreateUsagePlanRequest = createUsagePlanRequestCaptor.getValue
-      capturedRequest.name() shouldEqual applicationName
-      capturedRequest.throttle().rateLimit() shouldEqual addApplicationHandler.NamedUsagePlans("SILVER")._1
-      capturedRequest.throttle().burstLimit() shouldEqual addApplicationHandler.NamedUsagePlans("SILVER")._2
-
-      val capturedAPIKeyRequest: CreateApiKeyRequest = createApiKeyRequestCaptor.getValue
-      capturedAPIKeyRequest.name() shouldEqual applicationName
-      capturedAPIKeyRequest.value() shouldEqual serverToken
-      capturedAPIKeyRequest.enabled() shouldBe true
-      capturedAPIKeyRequest.generateDistinctId() shouldBe false
+      createUsagePlanRequestCorrectlyFormatted(
+        createUsagePlanRequestCaptor,
+        applicationName,
+        addApplicationHandler.NamedUsagePlans(usagePlanName)._1,
+        addApplicationHandler.NamedUsagePlans(usagePlanName)._2)
+      createAPIKeyRequestCorrectlyFormatted(createApiKeyRequestCaptor, applicationName, serverToken)
+      createUsagePlanKeyRequestCorrectlyFormatted(createUsagePlanKeyRequestCaptor, usagePlanId, apiKeyId)
     }
 
     "create a new Gold API Gateway Usage Plan if the application is new" in new Setup {
+      val usagePlanName = "GOLD"
+
       val sqsEvent = new SQSEvent()
-      sqsEvent.setRecords(List(buildAddApplicationRequest(applicationName, "GOLD", serverToken)))
+      sqsEvent.setRecords(List(buildAddApplicationRequest(applicationName, usagePlanName, serverToken)))
 
       val createUsagePlanRequestCaptor: ArgumentCaptor[CreateUsagePlanRequest] = ArgumentCaptor.forClass(classOf[CreateUsagePlanRequest])
       when(mockAPIGatewayClient.createUsagePlan(createUsagePlanRequestCaptor.capture())).thenReturn(CreateUsagePlanResponse.builder().id(usagePlanId).build())
@@ -111,18 +117,18 @@ class AddApplicationHandlerSpec extends WordSpecLike with Matchers with MockitoS
       val createApiKeyRequestCaptor: ArgumentCaptor[CreateApiKeyRequest] = ArgumentCaptor.forClass(classOf[CreateApiKeyRequest])
       when(mockAPIGatewayClient.createApiKey(createApiKeyRequestCaptor.capture())).thenReturn(CreateApiKeyResponse.builder().id(apiKeyId).build())
 
+      val createUsagePlanKeyRequestCaptor: ArgumentCaptor[CreateUsagePlanKeyRequest] = ArgumentCaptor.forClass(classOf[CreateUsagePlanKeyRequest])
+      when(mockAPIGatewayClient.createUsagePlanKey(createUsagePlanKeyRequestCaptor.capture())).thenReturn(CreateUsagePlanKeyResponse.builder().build())
+
       addApplicationHandler handleInput(sqsEvent, mockContext)
 
-      val capturedRequest: CreateUsagePlanRequest = createUsagePlanRequestCaptor.getValue
-      capturedRequest.name() shouldEqual applicationName
-      capturedRequest.throttle().rateLimit() shouldEqual addApplicationHandler.NamedUsagePlans("GOLD")._1
-      capturedRequest.throttle().burstLimit() shouldEqual addApplicationHandler.NamedUsagePlans("GOLD")._2
-
-      val capturedAPIKeyRequest: CreateApiKeyRequest = createApiKeyRequestCaptor.getValue
-      capturedAPIKeyRequest.name() shouldEqual applicationName
-      capturedAPIKeyRequest.value() shouldEqual serverToken
-      capturedAPIKeyRequest.enabled() shouldBe true
-      capturedAPIKeyRequest.generateDistinctId() shouldBe false
+      createUsagePlanRequestCorrectlyFormatted(
+        createUsagePlanRequestCaptor,
+        applicationName,
+        addApplicationHandler.NamedUsagePlans(usagePlanName)._1,
+        addApplicationHandler.NamedUsagePlans(usagePlanName)._2)
+      createAPIKeyRequestCorrectlyFormatted(createApiKeyRequestCaptor, applicationName, serverToken)
+      createUsagePlanKeyRequestCorrectlyFormatted(createUsagePlanKeyRequestCaptor, usagePlanId, apiKeyId)
     }
 
     "throw exception if the event has no messages" in new Setup {
@@ -143,5 +149,27 @@ class AddApplicationHandlerSpec extends WordSpecLike with Matchers with MockitoS
       val exception: IllegalArgumentException = intercept[IllegalArgumentException](addApplicationHandler.handleInput(sqsEvent, mockContext))
       exception.getMessage shouldEqual "Invalid number of records: 2"
     }
+  }
+
+  def createUsagePlanRequestCorrectlyFormatted(argumentCaptor: ArgumentCaptor[CreateUsagePlanRequest], expectedApplicationName: String, expectedRateLimit: Double, expectedBurstLimit: Int): Unit = {
+    val capturedRequest: CreateUsagePlanRequest = argumentCaptor.getValue
+    capturedRequest.name() shouldEqual expectedApplicationName
+    capturedRequest.throttle().rateLimit() shouldEqual expectedRateLimit
+    capturedRequest.throttle().burstLimit() shouldEqual expectedBurstLimit
+  }
+
+  def createAPIKeyRequestCorrectlyFormatted(argumentCaptor: ArgumentCaptor[CreateApiKeyRequest], expectedApplicationName: String, expectedServerToken: String): Unit = {
+    val capturedAPIKeyRequest: CreateApiKeyRequest = argumentCaptor.getValue
+    capturedAPIKeyRequest.name() shouldEqual expectedApplicationName
+    capturedAPIKeyRequest.value() shouldEqual expectedServerToken
+    capturedAPIKeyRequest.enabled() shouldBe true
+    capturedAPIKeyRequest.generateDistinctId() shouldBe false
+  }
+
+  def createUsagePlanKeyRequestCorrectlyFormatted(argumentCaptor: ArgumentCaptor[CreateUsagePlanKeyRequest], expectedUsagePlanId: String, expectedApiKeyId: String): Unit = {
+    val capturedUsagePlanKeyRequest: CreateUsagePlanKeyRequest = argumentCaptor.getValue
+    capturedUsagePlanKeyRequest.usagePlanId() shouldEqual expectedUsagePlanId
+    capturedUsagePlanKeyRequest.keyId() shouldEqual expectedApiKeyId
+    capturedUsagePlanKeyRequest.keyType() shouldEqual "API_KEY"
   }
 }

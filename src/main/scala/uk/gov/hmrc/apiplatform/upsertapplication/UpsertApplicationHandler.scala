@@ -3,7 +3,7 @@ package uk.gov.hmrc.apiplatform.upsertapplication
 import com.amazonaws.services.lambda.runtime.events.SQSEvent
 import com.amazonaws.services.lambda.runtime.{Context, LambdaLogger}
 import software.amazon.awssdk.services.apigateway.ApiGatewayClient
-import software.amazon.awssdk.services.apigateway.model.{CreateApiKeyRequest, CreateUsagePlanRequest, ThrottleSettings}
+import software.amazon.awssdk.services.apigateway.model.{CreateApiKeyRequest, CreateUsagePlanKeyRequest, CreateUsagePlanRequest, ThrottleSettings}
 import uk.gov.hmrc.api_platform_manage_api.AwsApiGatewayClient.awsApiGatewayClient
 import uk.gov.hmrc.api_platform_manage_api.AwsIdRetriever
 import uk.gov.hmrc.aws_gateway_proxied_request_lambda.SqsHandler
@@ -13,9 +13,9 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
   // Usage Plan Name -> (Rate Limit, Burst Limit)
   val NamedUsagePlans: Map[String, (Double, Int)] =
     Map(
-      "BRONZE" -> (10d, 100),
-      "SILVER" -> (100d, 1000),
-      "GOLD" -> (1000d, 10000)
+      "BRONZE" -> (2.5d, 3), // 150 requests/min
+      "SILVER" -> (8.4d, 9), // 500 requests/min
+      "GOLD" -> (16.7d, 17) // 1000 requests/min
     )
 
   def this() {
@@ -30,27 +30,30 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
 
     val upsertRequest: UpsertApplicationRequest = fromJson[UpsertApplicationRequest](input.getRecords.get(0).getBody)
 
-    getAwsUsagePlanIdByApplicationName(upsertRequest.applicationName) match {
-      case Some(usagePlanId) => updateApplication(usagePlanId, upsertRequest)
+    val usagePlanId: String = getAwsUsagePlanIdByApplicationName(upsertRequest.applicationName) match {
+      case Some(id) => updateApplication(id, upsertRequest)
       case None => createApplication(upsertRequest)
     }
 
-    getAwsApiKeyIdByApplicationName(upsertRequest.applicationName) match {
+    val apiKeyId: String = getAwsApiKeyIdByApplicationName(upsertRequest.applicationName) match {
+      case Some(id) => logger.log("API Key already exists"); id
       case None => createAPIKey(upsertRequest)
-      case _ => logger.log("API Key already exists")
     }
+
+    linkUsagePlanToKey(usagePlanId, apiKeyId)
   }
 
-  def updateApplication(usagePlanId: String, upsertRequest: UpsertApplicationRequest): Unit = ???
+  def updateApplication(usagePlanId: String, upsertRequest: UpsertApplicationRequest): String = ???
 
-  def createApplication(upsertRequest: UpsertApplicationRequest): Unit = {
+  def createApplication(upsertRequest: UpsertApplicationRequest): String = {
     def usagePlanRequest =
       CreateUsagePlanRequest.builder()
         .name(upsertRequest.applicationName)
         .throttle(buildThrottleSettings(upsertRequest.usagePlan))
         .build()
 
-    apiGatewayClient.createUsagePlan(usagePlanRequest)
+    val response = apiGatewayClient.createUsagePlan(usagePlanRequest)
+    response.id()
   }
 
   def buildThrottleSettings(usagePlanName: String): ThrottleSettings =
@@ -59,7 +62,7 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
       .burstLimit(NamedUsagePlans(usagePlanName)._2)
       .build()
 
-  def createAPIKey(upsertRequest: UpsertApplicationRequest): Unit = {
+  def createAPIKey(upsertRequest: UpsertApplicationRequest): String = {
     def apiKeyRequest =
       CreateApiKeyRequest.builder()
         .name(upsertRequest.applicationName)
@@ -68,11 +71,22 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
         .enabled(true)
         .build()
 
-    apiGatewayClient.createApiKey(apiKeyRequest)
+    val response = apiGatewayClient.createApiKey(apiKeyRequest)
+    response.id()
+  }
+
+  def linkUsagePlanToKey(usagePlanId: String, apiKeyId: String): Unit = {
+    val createUsagePlanKeyRequest =
+      CreateUsagePlanKeyRequest.builder()
+        .usagePlanId(usagePlanId)
+        .keyId(apiKeyId)
+        .keyType("API_KEY")
+        .build()
+
+    apiGatewayClient.createUsagePlanKey(createUsagePlanKeyRequest)
   }
 
 }
-
 
 case class UpsertApplicationRequest(applicationName: String, usagePlan: String, serverToken: String)
 
