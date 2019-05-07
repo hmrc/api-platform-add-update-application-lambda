@@ -48,6 +48,7 @@ class AddApplicationHandlerSpec extends WordSpecLike with Matchers with MockitoS
 
     when(mockAPIGatewayClient.getUsagePlans(any[GetUsagePlansRequest])).thenReturn(buildNonMatchingUsagePlansResponse(3))
     when(mockAPIGatewayClient.getApiKeys(any[GetApiKeysRequest])).thenReturn(GetApiKeysResponse.builder().build())
+    when(mockAPIGatewayClient.getUsagePlanKeys(any[GetUsagePlanKeysRequest])).thenReturn(GetUsagePlanKeysResponse.builder().build())
 
     val addApplicationHandler = new UpsertApplicationHandler(mockAPIGatewayClient, environment)
   }

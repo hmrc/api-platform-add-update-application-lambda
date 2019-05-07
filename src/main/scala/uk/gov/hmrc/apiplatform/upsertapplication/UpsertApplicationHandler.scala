@@ -3,7 +3,7 @@ package uk.gov.hmrc.apiplatform.upsertapplication
 import com.amazonaws.services.lambda.runtime.events.SQSEvent
 import com.amazonaws.services.lambda.runtime.{Context, LambdaLogger}
 import software.amazon.awssdk.services.apigateway.ApiGatewayClient
-import software.amazon.awssdk.services.apigateway.model.{CreateApiKeyRequest, CreateUsagePlanKeyRequest, CreateUsagePlanRequest, Op, PatchOperation, ThrottleSettings, UpdateUsagePlanRequest}
+import software.amazon.awssdk.services.apigateway.model.{CreateApiKeyRequest, CreateUsagePlanKeyRequest, CreateUsagePlanRequest, GetUsagePlanKeysRequest, Op, PatchOperation, ThrottleSettings, UpdateUsagePlanRequest}
 import uk.gov.hmrc.api_platform_manage_api.AwsApiGatewayClient.awsApiGatewayClient
 import uk.gov.hmrc.api_platform_manage_api.AwsIdRetriever
 import uk.gov.hmrc.aws_gateway_proxied_request_lambda.SqsHandler
@@ -42,10 +42,12 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
       case None => createAPIKey(upsertRequest)
     }
 
-    linkUsagePlanToKey(usagePlanId, apiKeyId)
+    if (!usagePlanKeyExists(usagePlanId, apiKeyId)) {
+      linkUsagePlanToKey(usagePlanId, apiKeyId)
+    }
   }
 
-  def updateApplication(usagePlanId: String, upsertRequest: UpsertApplicationRequest): String = {
+  private def updateApplication(usagePlanId: String, upsertRequest: UpsertApplicationRequest): String = {
     val patchOperations = List(
       PatchOperation.builder().op(Op.REPLACE).path("/throttle/rateLimit").value(NamedUsagePlans(upsertRequest.usagePlan)._1.toString).build(),
       PatchOperation.builder().op(Op.REPLACE).path("/throttle/burstLimit").value(NamedUsagePlans(upsertRequest.usagePlan)._2.toString).build())
@@ -56,7 +58,7 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
     updateResponse.id()
   }
 
-  def createApplication(upsertRequest: UpsertApplicationRequest): String = {
+  private def createApplication(upsertRequest: UpsertApplicationRequest): String = {
     def usagePlanRequest =
       CreateUsagePlanRequest.builder()
         .name(upsertRequest.applicationName)
@@ -67,13 +69,13 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
     response.id()
   }
 
-  def buildThrottleSettings(usagePlanName: String): ThrottleSettings =
+  private def buildThrottleSettings(usagePlanName: String): ThrottleSettings =
     ThrottleSettings.builder()
       .rateLimit(NamedUsagePlans(usagePlanName)._1)
       .burstLimit(NamedUsagePlans(usagePlanName)._2)
       .build()
 
-  def createAPIKey(upsertRequest: UpsertApplicationRequest): String = {
+  private def createAPIKey(upsertRequest: UpsertApplicationRequest): String = {
     def apiKeyRequest =
       CreateApiKeyRequest.builder()
         .name(upsertRequest.applicationName)
@@ -86,7 +88,7 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
     response.id()
   }
 
-  def linkUsagePlanToKey(usagePlanId: String, apiKeyId: String): Unit = {
+  private def linkUsagePlanToKey(usagePlanId: String, apiKeyId: String): Unit = {
     val createUsagePlanKeyRequest =
       CreateUsagePlanKeyRequest.builder()
         .usagePlanId(usagePlanId)
@@ -97,8 +99,10 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
     apiGatewayClient.createUsagePlanKey(createUsagePlanKeyRequest)
   }
 
+  private def usagePlanKeyExists(usagePlanId: String, apiKeyId: String): Boolean = {
+    apiGatewayClient.getUsagePlanKeys(GetUsagePlanKeysRequest.builder().usagePlanId(usagePlanId).build()).items().asScala
+      .exists(k => k.id == apiKeyId)
+  }
 }
 
 case class UpsertApplicationRequest(applicationName: String, usagePlan: String, serverToken: String)
-
-

@@ -11,7 +11,7 @@ import org.mockito.Mockito.when
 import org.scalatest.{Matchers, WordSpecLike}
 import org.scalatest.mockito.MockitoSugar
 import software.amazon.awssdk.services.apigateway.ApiGatewayClient
-import software.amazon.awssdk.services.apigateway.model.{CreateApiKeyRequest, CreateApiKeyResponse, CreateUsagePlanKeyRequest, CreateUsagePlanKeyResponse, CreateUsagePlanRequest, CreateUsagePlanResponse, GetApiKeysRequest, GetApiKeysResponse, GetRestApisResponse, GetUsagePlansRequest, GetUsagePlansResponse, Op, PatchOperation, RestApi, UpdateUsagePlanRequest, UpdateUsagePlanResponse, UsagePlan}
+import software.amazon.awssdk.services.apigateway.model.{CreateApiKeyRequest, CreateApiKeyResponse, CreateUsagePlanKeyRequest, CreateUsagePlanKeyResponse, CreateUsagePlanRequest, CreateUsagePlanResponse, GetApiKeysRequest, GetApiKeysResponse, GetRestApisResponse, GetUsagePlanKeysRequest, GetUsagePlanKeysResponse, GetUsagePlansRequest, GetUsagePlansResponse, Op, PatchOperation, RestApi, UpdateUsagePlanRequest, UpdateUsagePlanResponse, UsagePlan, UsagePlanKey}
 import uk.gov.hmrc.aws_gateway_proxied_request_lambda.JsonMapper
 
 import scala.collection.JavaConversions.seqAsJavaList
@@ -46,6 +46,7 @@ class UpdateApplicationHandlerSpec extends WordSpecLike with Matchers with Mocki
 
     when(mockAPIGatewayClient.getUsagePlans(any[GetUsagePlansRequest])).thenReturn(buildMatchingUsagePlansResponse(usagePlanId, applicationName))
     when(mockAPIGatewayClient.getApiKeys(any[GetApiKeysRequest])).thenReturn(GetApiKeysResponse.builder().build())
+    when(mockAPIGatewayClient.getUsagePlanKeys(any[GetUsagePlanKeysRequest])).thenReturn(GetUsagePlanKeysResponse.builder().build())
 
     val addApplicationHandler = new UpsertApplicationHandler(mockAPIGatewayClient, environment)
   }
