@@ -3,7 +3,7 @@ package uk.gov.hmrc.apiplatform.upsertapplication
 import com.amazonaws.services.lambda.runtime.events.SQSEvent
 import com.amazonaws.services.lambda.runtime.{Context, LambdaLogger}
 import software.amazon.awssdk.services.apigateway.ApiGatewayClient
-import software.amazon.awssdk.services.apigateway.model.{CreateUsagePlanRequest, ThrottleSettings}
+import software.amazon.awssdk.services.apigateway.model.{CreateApiKeyRequest, CreateUsagePlanRequest, ThrottleSettings}
 import uk.gov.hmrc.api_platform_manage_api.AwsApiGatewayClient.awsApiGatewayClient
 import uk.gov.hmrc.api_platform_manage_api.AwsIdRetriever
 import uk.gov.hmrc.aws_gateway_proxied_request_lambda.SqsHandler
@@ -34,6 +34,11 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
       case Some(usagePlanId) => updateApplication(usagePlanId, upsertRequest)
       case None => createApplication(upsertRequest)
     }
+
+    getAwsApiKeyIdByApplicationName(upsertRequest.applicationName) match {
+      case None => createAPIKey(upsertRequest)
+      case _ => logger.log("API Key already exists")
+    }
   }
 
   def updateApplication(usagePlanId: String, upsertRequest: UpsertApplicationRequest): Unit = ???
@@ -48,15 +53,27 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
     apiGatewayClient.createUsagePlan(usagePlanRequest)
   }
 
-  def buildThrottleSettings(usagePlanName: String) =
+  def buildThrottleSettings(usagePlanName: String): ThrottleSettings =
     ThrottleSettings.builder()
       .rateLimit(NamedUsagePlans(usagePlanName)._1)
       .burstLimit(NamedUsagePlans(usagePlanName)._2)
       .build()
 
+  def createAPIKey(upsertRequest: UpsertApplicationRequest): Unit = {
+    def apiKeyRequest =
+      CreateApiKeyRequest.builder()
+        .name(upsertRequest.applicationName)
+        .value(upsertRequest.serverToken)
+        .generateDistinctId(false)
+        .enabled(true)
+        .build()
+
+    apiGatewayClient.createApiKey(apiKeyRequest)
+  }
+
 }
 
 
-case class UpsertApplicationRequest(applicationName: String, usagePlan: String)
+case class UpsertApplicationRequest(applicationName: String, usagePlan: String, serverToken: String)
 
 
