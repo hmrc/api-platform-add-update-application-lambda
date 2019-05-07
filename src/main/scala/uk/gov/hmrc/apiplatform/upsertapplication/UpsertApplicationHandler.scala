@@ -3,10 +3,12 @@ package uk.gov.hmrc.apiplatform.upsertapplication
 import com.amazonaws.services.lambda.runtime.events.SQSEvent
 import com.amazonaws.services.lambda.runtime.{Context, LambdaLogger}
 import software.amazon.awssdk.services.apigateway.ApiGatewayClient
-import software.amazon.awssdk.services.apigateway.model.{CreateApiKeyRequest, CreateUsagePlanKeyRequest, CreateUsagePlanRequest, ThrottleSettings}
+import software.amazon.awssdk.services.apigateway.model.{CreateApiKeyRequest, CreateUsagePlanKeyRequest, CreateUsagePlanRequest, Op, PatchOperation, ThrottleSettings, UpdateUsagePlanRequest}
 import uk.gov.hmrc.api_platform_manage_api.AwsApiGatewayClient.awsApiGatewayClient
 import uk.gov.hmrc.api_platform_manage_api.AwsIdRetriever
 import uk.gov.hmrc.aws_gateway_proxied_request_lambda.SqsHandler
+
+import scala.collection.JavaConverters._
 
 class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, environment: Map[String, String]) extends SqsHandler with AwsIdRetriever {
 
@@ -43,7 +45,16 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
     linkUsagePlanToKey(usagePlanId, apiKeyId)
   }
 
-  def updateApplication(usagePlanId: String, upsertRequest: UpsertApplicationRequest): String = ???
+  def updateApplication(usagePlanId: String, upsertRequest: UpsertApplicationRequest): String = {
+    val patchOperations = List(
+      PatchOperation.builder().op(Op.REPLACE).path("/throttle/rateLimit").value(NamedUsagePlans(upsertRequest.usagePlan)._1.toString).build(),
+      PatchOperation.builder().op(Op.REPLACE).path("/throttle/burstLimit").value(NamedUsagePlans(upsertRequest.usagePlan)._2.toString).build())
+
+    val updateRequest = UpdateUsagePlanRequest.builder().usagePlanId(usagePlanId).patchOperations(patchOperations.asJava).build()
+
+    val updateResponse = apiGatewayClient.updateUsagePlan(updateRequest)
+    updateResponse.id()
+  }
 
   def createApplication(upsertRequest: UpsertApplicationRequest): String = {
     def usagePlanRequest =
