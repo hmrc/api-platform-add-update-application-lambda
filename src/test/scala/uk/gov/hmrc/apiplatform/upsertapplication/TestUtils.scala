@@ -28,19 +28,30 @@ trait Setup extends MockitoSugar {
       .build()
   }
 
-  def buildMatchingUsagePlansResponse(matchingId: String, matchingName: String): GetUsagePlansResponse = {
+  def buildMatchingUsagePlansResponse(matchingId: String, matchingName: String): GetUsagePlansResponse =
     GetUsagePlansResponse.builder()
       .items(UsagePlan.builder().id(matchingId).name(matchingName).build())
       .build()
-  }
 
-  def buildMatchingAPIKeysResponse(matchingAPIKeyId: String, matchingApplicationName: String, matchingAPIKey: String): GetApiKeysResponse = {
-    GetApiKeysResponse.builder().items(List(ApiKey.builder().id(matchingAPIKeyId).name(matchingApplicationName).value(matchingAPIKey).build())).build()
-  }
 
-  def buildMatchingUsagePlanKeysResponse(matchingUsagePlanId: String, matchingAPIKeyId: String): GetUsagePlanKeysResponse = {
-    GetUsagePlanKeysResponse.builder().items(UsagePlanKey.builder().id(matchingAPIKeyId).value(matchingUsagePlanId).build()).build()
-  }
+  def buildMatchingAPIKeysResponse(matchingAPIKeyId: String, matchingApplicationName: String, matchingAPIKey: String): GetApiKeysResponse =
+    GetApiKeysResponse.builder()
+      .items(
+          ApiKey.builder()
+            .id(matchingAPIKeyId)
+            .name(matchingApplicationName)
+            .value(matchingAPIKey)
+            .build())
+      .build()
+
+  def buildMatchingUsagePlanKeysResponse(matchingUsagePlanId: String, matchingAPIKeyId: String): GetUsagePlanKeysResponse =
+    GetUsagePlanKeysResponse.builder()
+      .items(
+        UsagePlanKey.builder()
+          .id(matchingAPIKeyId)
+          .value(matchingUsagePlanId)
+          .build())
+      .build()
 
   val usagePlanId: String = UUID.randomUUID().toString
   val apiKeyId: String = UUID.randomUUID().toString
