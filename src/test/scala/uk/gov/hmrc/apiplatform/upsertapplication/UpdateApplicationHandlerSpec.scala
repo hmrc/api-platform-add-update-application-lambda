@@ -3,15 +3,15 @@ package uk.gov.hmrc.apiplatform.upsertapplication
 import java.util.UUID
 
 import com.amazonaws.services.lambda.runtime.events.SQSEvent
-import com.amazonaws.services.lambda.runtime.{Context, LambdaLogger}
 import com.amazonaws.services.lambda.runtime.events.SQSEvent.SQSMessage
+import com.amazonaws.services.lambda.runtime.{Context, LambdaLogger}
 import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
-import org.mockito.Mockito.when
-import org.scalatest.{Matchers, WordSpecLike}
+import org.mockito.Mockito.{times, verify, when}
 import org.scalatest.mockito.MockitoSugar
+import org.scalatest.{Matchers, WordSpecLike}
 import software.amazon.awssdk.services.apigateway.ApiGatewayClient
-import software.amazon.awssdk.services.apigateway.model.{CreateApiKeyRequest, CreateApiKeyResponse, CreateUsagePlanKeyRequest, CreateUsagePlanKeyResponse, CreateUsagePlanRequest, CreateUsagePlanResponse, GetApiKeysRequest, GetApiKeysResponse, GetRestApisResponse, GetUsagePlanKeysRequest, GetUsagePlanKeysResponse, GetUsagePlansRequest, GetUsagePlansResponse, Op, PatchOperation, RestApi, UpdateUsagePlanRequest, UpdateUsagePlanResponse, UsagePlan, UsagePlanKey}
+import software.amazon.awssdk.services.apigateway.model._
 import uk.gov.hmrc.aws_gateway_proxied_request_lambda.JsonMapper
 
 import scala.collection.JavaConversions.seqAsJavaList
@@ -32,6 +32,14 @@ class UpdateApplicationHandlerSpec extends WordSpecLike with Matchers with Mocki
         .build()
     }
 
+    def buildMatchingAPIKeysResponse(matchingAPIKeyId: String, matchingApplicationName: String, matchingAPIKey: String): GetApiKeysResponse = {
+      GetApiKeysResponse.builder().items(List(ApiKey.builder().id(matchingAPIKeyId).name(matchingApplicationName).value(matchingAPIKey).build())).build()
+    }
+
+    def buildMatchingUsagePlanKeysResponse(matchingUsagePlanId: String, matchingAPIKeyId: String): GetUsagePlanKeysResponse = {
+      GetUsagePlanKeysResponse.builder().items(UsagePlanKey.builder().id(matchingAPIKeyId).value(matchingUsagePlanId).build()).build()
+    }
+
     val usagePlanId: String = UUID.randomUUID().toString
     val apiKeyId: String = UUID.randomUUID().toString
 
@@ -45,14 +53,14 @@ class UpdateApplicationHandlerSpec extends WordSpecLike with Matchers with Mocki
     val environment: Map[String, String] = Map()
 
     when(mockAPIGatewayClient.getUsagePlans(any[GetUsagePlansRequest])).thenReturn(buildMatchingUsagePlansResponse(usagePlanId, applicationName))
-    when(mockAPIGatewayClient.getApiKeys(any[GetApiKeysRequest])).thenReturn(GetApiKeysResponse.builder().build())
-    when(mockAPIGatewayClient.getUsagePlanKeys(any[GetUsagePlanKeysRequest])).thenReturn(GetUsagePlanKeysResponse.builder().build())
+    when(mockAPIGatewayClient.getApiKeys(any[GetApiKeysRequest])).thenReturn(buildMatchingAPIKeysResponse(apiKeyId, applicationName, serverToken))
+    when(mockAPIGatewayClient.getUsagePlanKeys(any[GetUsagePlanKeysRequest])).thenReturn(buildMatchingUsagePlanKeysResponse(usagePlanId, apiKeyId))
 
     val addApplicationHandler = new UpsertApplicationHandler(mockAPIGatewayClient, environment)
   }
 
   "Update Application" should {
-    "modify rateLimit and burstLimit if application already exists" in new Setup {
+    "update rateLimit and burstLimit for existing Application" in new Setup {
       val usagePlanName = "BRONZE"
 
       val sqsEvent = new SQSEvent()
@@ -60,12 +68,6 @@ class UpdateApplicationHandlerSpec extends WordSpecLike with Matchers with Mocki
 
       val updateUsagePlanRequestCaptor: ArgumentCaptor[UpdateUsagePlanRequest] = ArgumentCaptor.forClass(classOf[UpdateUsagePlanRequest])
       when(mockAPIGatewayClient.updateUsagePlan(updateUsagePlanRequestCaptor.capture())).thenReturn(UpdateUsagePlanResponse.builder().id(usagePlanId).build())
-
-      val createApiKeyRequestCaptor: ArgumentCaptor[CreateApiKeyRequest] = ArgumentCaptor.forClass(classOf[CreateApiKeyRequest])
-      when(mockAPIGatewayClient.createApiKey(createApiKeyRequestCaptor.capture())).thenReturn(CreateApiKeyResponse.builder().id(apiKeyId).build())
-
-      val createUsagePlanKeyRequestCaptor: ArgumentCaptor[CreateUsagePlanKeyRequest] = ArgumentCaptor.forClass(classOf[CreateUsagePlanKeyRequest])
-      when(mockAPIGatewayClient.createUsagePlanKey(createUsagePlanKeyRequestCaptor.capture())).thenReturn(CreateUsagePlanKeyResponse.builder().build())
 
       addApplicationHandler handleInput(sqsEvent, mockContext)
 
@@ -75,8 +77,10 @@ class UpdateApplicationHandlerSpec extends WordSpecLike with Matchers with Mocki
 
       capturedUpdateRequest.patchOperations() should contain only (
         PatchOperation.builder().op(Op.REPLACE).path("/throttle/rateLimit").value(addApplicationHandler.NamedUsagePlans(usagePlanName)._1.toString).build(),
-        PatchOperation.builder().op(Op.REPLACE).path("/throttle/burstLimit").value(addApplicationHandler.NamedUsagePlans(usagePlanName)._2.toString).build()
-      )
+        PatchOperation.builder().op(Op.REPLACE).path("/throttle/burstLimit").value(addApplicationHandler.NamedUsagePlans(usagePlanName)._2.toString).build())
+
+      verify(mockAPIGatewayClient, times(0)).createApiKey(any[CreateApiKeyRequest])
+      verify(mockAPIGatewayClient, times(0)).createUsagePlanKey(any[CreateUsagePlanKeyRequest])
     }
   }
 }
