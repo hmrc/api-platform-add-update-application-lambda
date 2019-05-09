@@ -5,6 +5,7 @@ import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.{times, verify, verifyZeroInteractions, when}
 import org.scalatest.{Matchers, WordSpecLike}
+import software.amazon.awssdk.awscore.exception.AwsServiceException
 import software.amazon.awssdk.services.apigateway.model._
 import uk.gov.hmrc.aws_gateway_proxied_request_lambda.JsonMapper
 
@@ -149,6 +150,41 @@ class AddApplicationHandlerSpec extends WordSpecLike with Matchers with JsonMapp
 
       verify(mockAPIGatewayClient, times(0)).createApiKey(any[CreateApiKeyRequest])
       createUsagePlanKeyRequestCorrectlyFormatted(createUsagePlanKeyRequestCaptor, usagePlanId, apiKeyId)
+    }
+
+    "throw exception if call to create Usage Plan fails" in new NoMatchingUsagePlan {
+      val exceptionToThrow: Exception = AwsServiceException.builder().build()
+      when(mockAPIGatewayClient.createUsagePlan(any[CreateUsagePlanRequest])).thenThrow(exceptionToThrow)
+
+      val sqsEvent = new SQSEvent()
+      sqsEvent.setRecords(List(buildAddApplicationRequest(applicationName, "BRONZE", serverToken)))
+
+      val thrownException: Exception = intercept[Exception](addApplicationHandler handleInput(sqsEvent, mockContext))
+      thrownException should be theSameInstanceAs exceptionToThrow
+    }
+
+    "throw exception if call to create API Key fails" in new ExistingUsagePlan {
+      val exceptionToThrow: Exception = AwsServiceException.builder().build()
+      when(mockAPIGatewayClient.updateUsagePlan(any[UpdateUsagePlanRequest])).thenReturn(UpdateUsagePlanResponse.builder().id(usagePlanId).build())
+      when(mockAPIGatewayClient.createApiKey(any[CreateApiKeyRequest])).thenThrow(exceptionToThrow)
+
+      val sqsEvent = new SQSEvent()
+      sqsEvent.setRecords(List(buildAddApplicationRequest(applicationName, "BRONZE", serverToken)))
+
+      val thrownException: Exception = intercept[Exception](addApplicationHandler handleInput(sqsEvent, mockContext))
+      thrownException should be theSameInstanceAs exceptionToThrow
+    }
+
+    "throw exception if call to link Usage Plan and API Key fails" in new ExistingUnlinkedUsagePlanAndAPIKey {
+      val exceptionToThrow: Exception = AwsServiceException.builder().build()
+      when(mockAPIGatewayClient.updateUsagePlan(any[UpdateUsagePlanRequest])).thenReturn(UpdateUsagePlanResponse.builder().id(usagePlanId).build())
+      when(mockAPIGatewayClient.createUsagePlanKey(any[CreateUsagePlanKeyRequest])).thenThrow(exceptionToThrow)
+
+      val sqsEvent = new SQSEvent()
+      sqsEvent.setRecords(List(buildAddApplicationRequest(applicationName, "BRONZE", serverToken)))
+
+      val thrownException: Exception = intercept[Exception](addApplicationHandler handleInput(sqsEvent, mockContext))
+      thrownException should be theSameInstanceAs exceptionToThrow
     }
 
     "throw exception if the event has no messages" in new Setup {
