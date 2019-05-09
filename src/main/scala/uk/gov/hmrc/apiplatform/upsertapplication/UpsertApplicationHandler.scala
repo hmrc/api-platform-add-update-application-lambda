@@ -33,17 +33,20 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
     val upsertRequest: UpsertApplicationRequest = fromJson[UpsertApplicationRequest](input.getRecords.get(0).getBody)
 
     val usagePlanId: String = getAwsUsagePlanIdByApplicationName(upsertRequest.applicationName) match {
-      case Some(id) => updateApplication(id, upsertRequest)
-      case None => createApplication(upsertRequest)
+      case Some(id) => logger.log(s"Usage Plan for Application [${upsertRequest.applicationName}] already exists - updating"); updateApplication(id, upsertRequest)
+      case None => logger.log(s"Creating Usage Plan for Application [${upsertRequest.applicationName}]"); createApplication(upsertRequest)
     }
 
     val apiKeyId: String = getAwsApiKeyIdByApplicationName(upsertRequest.applicationName) match {
-      case Some(id) => logger.log("API Key already exists"); id
-      case None => createAPIKey(upsertRequest)
+      case Some(id) => logger.log(s"API Key for Application [${upsertRequest.applicationName}] already exists"); id
+      case None => logger.log(s"Creating API Key for Application [${upsertRequest.applicationName}]"); createAPIKey(upsertRequest)
     }
 
     if (!usagePlanKeyExists(usagePlanId, apiKeyId)) {
+      logger.log(s"Linking Usage Plan and API Key for Application [${upsertRequest.applicationName}]")
       linkUsagePlanToKey(usagePlanId, apiKeyId)
+    } else {
+      logger.log(s"Usage Plan and API Key for Application [${upsertRequest.applicationName}] already linked")
     }
   }
 
