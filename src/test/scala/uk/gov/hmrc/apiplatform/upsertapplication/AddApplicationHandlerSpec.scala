@@ -92,6 +92,32 @@ class AddApplicationHandlerSpec extends WordSpecLike with Matchers with JsonMapp
       createUsagePlanKeyRequestCorrectlyFormatted(createUsagePlanKeyRequestCaptor, usagePlanId, apiKeyId)
     }
 
+    "create a new Platinum API Gateway Usage Plan if the application is new" in new NoMatchingUsagePlan {
+      val usagePlanName = "PLATINUM"
+
+      val sqsEvent = new SQSEvent()
+      sqsEvent.setRecords(List(buildAddApplicationRequest(applicationName, usagePlanName, serverToken)))
+
+      val createUsagePlanRequestCaptor: ArgumentCaptor[CreateUsagePlanRequest] = ArgumentCaptor.forClass(classOf[CreateUsagePlanRequest])
+      when(mockAPIGatewayClient.createUsagePlan(createUsagePlanRequestCaptor.capture())).thenReturn(CreateUsagePlanResponse.builder().id(usagePlanId).build())
+
+      val createApiKeyRequestCaptor: ArgumentCaptor[CreateApiKeyRequest] = ArgumentCaptor.forClass(classOf[CreateApiKeyRequest])
+      when(mockAPIGatewayClient.createApiKey(createApiKeyRequestCaptor.capture())).thenReturn(CreateApiKeyResponse.builder().id(apiKeyId).build())
+
+      val createUsagePlanKeyRequestCaptor: ArgumentCaptor[CreateUsagePlanKeyRequest] = ArgumentCaptor.forClass(classOf[CreateUsagePlanKeyRequest])
+      when(mockAPIGatewayClient.createUsagePlanKey(createUsagePlanKeyRequestCaptor.capture())).thenReturn(CreateUsagePlanKeyResponse.builder().build())
+
+      addApplicationHandler handleInput(sqsEvent, mockContext)
+
+      createUsagePlanRequestCorrectlyFormatted(
+        createUsagePlanRequestCaptor,
+        applicationName,
+        addApplicationHandler.NamedUsagePlans(usagePlanName)._1,
+        addApplicationHandler.NamedUsagePlans(usagePlanName)._2)
+      createAPIKeyRequestCorrectlyFormatted(createApiKeyRequestCaptor, applicationName, serverToken)
+      createUsagePlanKeyRequestCorrectlyFormatted(createUsagePlanKeyRequestCaptor, usagePlanId, apiKeyId)
+    }
+
     "create API Key and UsagePlanKey link if previous calls failed" in new ExistingUsagePlan {
       val usagePlanName = "BRONZE"
 
