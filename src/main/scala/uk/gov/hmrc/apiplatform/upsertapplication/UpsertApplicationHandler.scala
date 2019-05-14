@@ -17,7 +17,8 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
     Map(
       "BRONZE" -> (2.5d, 3), // 150 requests/min
       "SILVER" -> (8.4d, 9), // 500 requests/min
-      "GOLD" -> (16.7d, 17) // 1000 requests/min
+      "GOLD" -> (16.7d, 17), // 1000 requests/min
+      "PLATINUM" -> (66.7, 67) // 4000 requests/min
     )
 
   def this() {
