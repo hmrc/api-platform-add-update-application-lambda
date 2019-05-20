@@ -3,7 +3,7 @@ package uk.gov.hmrc.apiplatform.upsertapplication
 import com.amazonaws.services.lambda.runtime.events.SQSEvent
 import com.amazonaws.services.lambda.runtime.{Context, LambdaLogger}
 import software.amazon.awssdk.services.apigateway.ApiGatewayClient
-import software.amazon.awssdk.services.apigateway.model.{CreateApiKeyRequest, CreateUsagePlanKeyRequest, CreateUsagePlanRequest, GetUsagePlanKeysRequest, Op, PatchOperation, ThrottleSettings, UpdateUsagePlanRequest}
+import software.amazon.awssdk.services.apigateway.model._
 import uk.gov.hmrc.api_platform_manage_api.AwsApiGatewayClient.awsApiGatewayClient
 import uk.gov.hmrc.api_platform_manage_api.AwsIdRetriever
 import uk.gov.hmrc.aws_gateway_proxied_request_lambda.SqsHandler
@@ -35,7 +35,7 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
 
     val usagePlanId: String = getAwsUsagePlanIdByApplicationName(upsertRequest.applicationName) match {
       case Some(id) => logger.log(s"Usage Plan for Application [${upsertRequest.applicationName}] already exists - updating"); updateApplication(id, upsertRequest)
-      case None => logger.log(s"Creating Usage Plan for Application [${upsertRequest.applicationName}]"); createApplication(upsertRequest)
+      case None => logger.log(s"Creating Usage Plan for Application [${upsertRequest.applicationName}]"); createApplication(upsertRequest, logger)
     }
 
     val apiKeyId: String = getAwsApiKeyIdByApplicationName(upsertRequest.applicationName) match {
@@ -62,15 +62,25 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
     updateResponse.id()
   }
 
-  private def createApplication(upsertRequest: UpsertApplicationRequest): String = {
-    def usagePlanRequest =
+  private def createApplication(upsertRequest: UpsertApplicationRequest, logger: LambdaLogger): String = {
+    val usagePlanRequest =
       CreateUsagePlanRequest.builder()
         .name(upsertRequest.applicationName)
         .throttle(buildThrottleSettings(upsertRequest.usagePlan))
+        .apiStages(apiNamesToApiStages(upsertRequest.apiNames, logger).asJava)
         .build()
 
     val response = apiGatewayClient.createUsagePlan(usagePlanRequest)
     response.id()
+  }
+
+  private def apiNamesToApiStages(apiNames: Seq[String], logger: LambdaLogger): Seq[ApiStage] = {
+    apiNames map { apiName =>
+      getAwsRestApiIdByApiName(apiName, logger) match {
+        case Some(apiId) => ApiStage.builder().apiId(apiId).stage("current").build()
+        case _ => throw NotFoundException.builder().message(s"API '$apiName' not found").build()
+      }
+    }
   }
 
   private def buildThrottleSettings(usagePlanName: String): ThrottleSettings =
@@ -80,7 +90,7 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
       .build()
 
   private def createAPIKey(upsertRequest: UpsertApplicationRequest): String = {
-    def apiKeyRequest =
+    val apiKeyRequest =
       CreateApiKeyRequest.builder()
         .name(upsertRequest.applicationName)
         .value(upsertRequest.serverToken)
@@ -109,4 +119,4 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
   }
 }
 
-case class UpsertApplicationRequest(applicationName: String, usagePlan: String, serverToken: String)
+case class UpsertApplicationRequest(applicationName: String, usagePlan: String, serverToken: String, apiNames: Seq[String])

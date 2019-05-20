@@ -13,10 +13,9 @@ import org.scalatest.mockito.MockitoSugar
 import scala.collection.JavaConversions.seqAsJavaList
 
 trait Setup extends MockitoSugar {
-  def buildAddApplicationRequest(applicationName: String, usagePlan: String, serverToken: String): SQSMessage = {
+  def buildAddApplicationRequest(applicationName: String, usagePlan: String, serverToken: String, apiNames: Iterable[String] = Seq()): SQSMessage = {
     val message = new SQSMessage()
-    message.setBody(s"""{"applicationName": "$applicationName", "usagePlan": "$usagePlan", "serverToken": "$serverToken"}""")
-
+    message.setBody(s"""{"applicationName": "$applicationName", "usagePlan": "$usagePlan", "serverToken": "$serverToken", "apiNames": [${apiNames.map(n => s""""$n"""").mkString(",")}]}""")
     message
   }
 
