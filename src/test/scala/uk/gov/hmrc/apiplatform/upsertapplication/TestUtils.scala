@@ -7,7 +7,7 @@ import com.amazonaws.services.lambda.runtime.events.SQSEvent.SQSMessage
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.when
 import software.amazon.awssdk.services.apigateway.ApiGatewayClient
-import software.amazon.awssdk.services.apigateway.model.{ApiKey, GetApiKeysRequest, GetApiKeysResponse, GetUsagePlanKeysRequest, GetUsagePlanKeysResponse, GetUsagePlansRequest, GetUsagePlansResponse, UsagePlan, UsagePlanKey}
+import software.amazon.awssdk.services.apigateway.model.{ApiKey, GetApiKeysRequest, GetApiKeysResponse, GetUsagePlanKeysRequest, GetUsagePlanKeysResponse, GetUsagePlanResponse, GetUsagePlansRequest, GetUsagePlansResponse, ThrottleSettings, UsagePlan, UsagePlanKey}
 import org.scalatest.mockito.MockitoSugar
 
 import scala.collection.JavaConversions.seqAsJavaList
@@ -49,6 +49,17 @@ trait Setup extends MockitoSugar {
         UsagePlanKey.builder()
           .id(matchingAPIKeyId)
           .value(matchingUsagePlanId)
+          .build())
+      .build()
+
+  def buildMatchingUsagePlanResponse(id: String, name: String, rateLimit: Double, burstLimit: Int): GetUsagePlanResponse =
+    GetUsagePlanResponse.builder()
+      .id(id)
+      .name(name)
+      .throttle(
+        ThrottleSettings.builder()
+          .rateLimit(rateLimit)
+          .burstLimit(burstLimit)
           .build())
       .build()
 

@@ -13,11 +13,16 @@ import scala.collection.JavaConversions.seqAsJavaList
 class UpdateApplicationHandlerSpec extends WordSpecLike with Matchers with JsonMapper {
 
   "Update Application" should {
-    "update rateLimit and burstLimit for existing Application" in new ExistingLinkedUsagePlanAndAPIKey {
+    "update rateLimit and burstLimit for existing Application when different" in new ExistingLinkedUsagePlanAndAPIKey {
       val usagePlanName = "BRONZE"
+      val currentRateLimit: Double = 999
+      val currentBurstLimit: Int = 999
 
       val sqsEvent = new SQSEvent()
       sqsEvent.setRecords(List(buildAddApplicationRequest(applicationName, usagePlanName, serverToken)))
+
+      when(mockAPIGatewayClient.getUsagePlan(any[GetUsagePlanRequest]))
+        .thenReturn(buildMatchingUsagePlanResponse(usagePlanId, applicationName, currentRateLimit, currentBurstLimit))
 
       val updateUsagePlanRequestCaptor: ArgumentCaptor[UpdateUsagePlanRequest] = ArgumentCaptor.forClass(classOf[UpdateUsagePlanRequest])
       when(mockAPIGatewayClient.updateUsagePlan(updateUsagePlanRequestCaptor.capture())).thenReturn(UpdateUsagePlanResponse.builder().id(usagePlanId).build())
@@ -35,5 +40,24 @@ class UpdateApplicationHandlerSpec extends WordSpecLike with Matchers with JsonM
       verify(mockAPIGatewayClient, times(0)).createApiKey(any[CreateApiKeyRequest])
       verify(mockAPIGatewayClient, times(0)).createUsagePlanKey(any[CreateUsagePlanKeyRequest])
     }
+
+    "not update rateLimit and burstLimit for existing Application when already correct" in new ExistingLinkedUsagePlanAndAPIKey {
+      val usagePlanName = "BRONZE"
+      val currentRateLimit: Double = addApplicationHandler.NamedUsagePlans(usagePlanName)._1
+      val currentBurstLimit: Int = addApplicationHandler.NamedUsagePlans(usagePlanName)._2
+
+      val sqsEvent = new SQSEvent()
+      sqsEvent.setRecords(List(buildAddApplicationRequest(applicationName, usagePlanName, serverToken)))
+
+      when(mockAPIGatewayClient.getUsagePlan(any[GetUsagePlanRequest]))
+        .thenReturn(buildMatchingUsagePlanResponse(usagePlanId, applicationName, currentRateLimit, currentBurstLimit))
+
+      addApplicationHandler handleInput(sqsEvent, mockContext)
+
+      verify(mockAPIGatewayClient, times(0)).updateUsagePlan(any[UpdateUsagePlanRequest])
+      verify(mockAPIGatewayClient, times(0)).createApiKey(any[CreateApiKeyRequest])
+      verify(mockAPIGatewayClient, times(0)).createUsagePlanKey(any[CreateUsagePlanKeyRequest])
+    }
   }
+
 }

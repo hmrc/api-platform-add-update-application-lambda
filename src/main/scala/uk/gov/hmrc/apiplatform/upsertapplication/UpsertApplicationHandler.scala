@@ -9,6 +9,7 @@ import uk.gov.hmrc.api_platform_manage_api.AwsIdRetriever
 import uk.gov.hmrc.aws_gateway_proxied_request_lambda.SqsHandler
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable.ListBuffer
 
 class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, environment: Map[String, String]) extends SqsHandler with AwsIdRetriever {
 
@@ -26,7 +27,7 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
   }
 
   override def handleInput(input: SQSEvent, context: Context): Unit = {
-    val logger: LambdaLogger = context.getLogger
+    implicit val logger: LambdaLogger = context.getLogger
     if (input.getRecords.size != 1) {
       throw new IllegalArgumentException(s"Invalid number of records: ${input.getRecords.size}")
     }
@@ -51,15 +52,35 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
     }
   }
 
-  private def updateApplication(usagePlanId: String, upsertRequest: UpsertApplicationRequest): String = {
-    val patchOperations = List(
-      PatchOperation.builder().op(Op.REPLACE).path("/throttle/rateLimit").value(NamedUsagePlans(upsertRequest.usagePlan)._1.toString).build(),
-      PatchOperation.builder().op(Op.REPLACE).path("/throttle/burstLimit").value(NamedUsagePlans(upsertRequest.usagePlan)._2.toString).build())
+  private def updateApplication(usagePlanId: String, upsertRequest: UpsertApplicationRequest)(implicit logger: LambdaLogger): String = {
+    def usagePlanUpdates(existingRateLimit: Double, existingBurstLimit: Int, requestedUsagePlan: String): Seq[PatchOperation] = {
+      val updateOperations: ListBuffer[PatchOperation] = ListBuffer[PatchOperation]()
 
-    val updateRequest = UpdateUsagePlanRequest.builder().usagePlanId(usagePlanId).patchOperations(patchOperations.asJava).build()
+      val requestedRateLimit: Double = NamedUsagePlans(requestedUsagePlan)._1
+      if (requestedRateLimit != existingRateLimit) {
+        updateOperations += PatchOperation.builder().op(Op.REPLACE).path("/throttle/rateLimit").value(requestedRateLimit.toString).build()
+      }
 
-    val updateResponse = apiGatewayClient.updateUsagePlan(updateRequest)
-    updateResponse.id()
+      val requestedBurstLimit: Int = NamedUsagePlans(requestedUsagePlan)._2
+      if (requestedBurstLimit != existingBurstLimit) {
+        updateOperations += PatchOperation.builder().op(Op.REPLACE).path("/throttle/burstLimit").value(requestedBurstLimit.toString).build()
+      }
+
+      updateOperations
+    }
+
+    val existingUsagePlan: GetUsagePlanResponse = apiGatewayClient.getUsagePlan(GetUsagePlanRequest.builder().usagePlanId(usagePlanId).build())
+    val patchOperations = usagePlanUpdates(existingUsagePlan.throttle().rateLimit(), existingUsagePlan.throttle().burstLimit(), upsertRequest.usagePlan)
+
+    if (patchOperations.nonEmpty) {
+      apiGatewayClient.updateUsagePlan(
+        UpdateUsagePlanRequest.builder()
+          .usagePlanId(usagePlanId)
+          .patchOperations(patchOperations.asJava)
+          .build())
+    }
+
+    usagePlanId
   }
 
   private def createApplication(upsertRequest: UpsertApplicationRequest, logger: LambdaLogger): String = {
