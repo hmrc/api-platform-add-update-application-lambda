@@ -36,7 +36,7 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
 
     val usagePlanId: String = getAwsUsagePlanIdByApplicationName(upsertRequest.applicationName) match {
       case Some(id) => logger.log(s"Usage Plan for Application [${upsertRequest.applicationName}] already exists - updating"); updateApplication(id, upsertRequest)
-      case None => logger.log(s"Creating Usage Plan for Application [${upsertRequest.applicationName}]"); createApplication(upsertRequest, logger)
+      case None => logger.log(s"Creating Usage Plan for Application [${upsertRequest.applicationName}]"); createApplication(upsertRequest)
     }
 
     val apiKeyId: String = getAwsApiKeyIdByApplicationName(upsertRequest.applicationName) match {
@@ -58,12 +58,24 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
 
       val requestedRateLimit: Double = NamedUsagePlans(requestedUsagePlan)._1
       if (requestedRateLimit != existingRateLimit) {
-        updateOperations += PatchOperation.builder().op(Op.REPLACE).path("/throttle/rateLimit").value(requestedRateLimit.toString).build()
+        logger.log(s"Updating Application Rate Limit from [$existingRateLimit] to [$requestedRateLimit]")
+        updateOperations +=
+          PatchOperation.builder()
+            .op(Op.REPLACE)
+            .path("/throttle/rateLimit")
+            .value(requestedRateLimit.toString)
+            .build()
       }
 
       val requestedBurstLimit: Int = NamedUsagePlans(requestedUsagePlan)._2
       if (requestedBurstLimit != existingBurstLimit) {
-        updateOperations += PatchOperation.builder().op(Op.REPLACE).path("/throttle/burstLimit").value(requestedBurstLimit.toString).build()
+        logger.log(s"Updating Application Burst Limit from [$existingBurstLimit] to [$requestedBurstLimit]")
+        updateOperations +=
+          PatchOperation.builder()
+            .op(Op.REPLACE)
+            .path("/throttle/burstLimit")
+            .value(requestedBurstLimit.toString)
+            .build()
       }
 
       updateOperations
@@ -78,24 +90,26 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
           .usagePlanId(usagePlanId)
           .patchOperations(patchOperations.asJava)
           .build())
+    } else {
+      logger.log(s"No updates to perform on Application [${upsertRequest.applicationName}]")
     }
 
     usagePlanId
   }
 
-  private def createApplication(upsertRequest: UpsertApplicationRequest, logger: LambdaLogger): String = {
+  private def createApplication(upsertRequest: UpsertApplicationRequest)(implicit logger: LambdaLogger): String = {
     val usagePlanRequest =
       CreateUsagePlanRequest.builder()
         .name(upsertRequest.applicationName)
         .throttle(buildThrottleSettings(upsertRequest.usagePlan))
-        .apiStages(apiNamesToApiStages(upsertRequest.apiNames, logger).asJava)
+        .apiStages(apiNamesToApiStages(upsertRequest.apiNames).asJava)
         .build()
 
     val response = apiGatewayClient.createUsagePlan(usagePlanRequest)
     response.id()
   }
 
-  private def apiNamesToApiStages(apiNames: Seq[String], logger: LambdaLogger): Seq[ApiStage] = {
+  private def apiNamesToApiStages(apiNames: Seq[String])(implicit logger: LambdaLogger): Seq[ApiStage] = {
     apiNames map { apiName =>
       getAwsRestApiIdByApiName(apiName, logger) match {
         case Some(apiId) => ApiStage.builder().apiId(apiId).stage("current").build()
@@ -134,10 +148,14 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
     apiGatewayClient.createUsagePlanKey(createUsagePlanKeyRequest)
   }
 
-  private def usagePlanKeyExists(usagePlanId: String, apiKeyId: String): Boolean = {
-    apiGatewayClient.getUsagePlanKeys(GetUsagePlanKeysRequest.builder().usagePlanId(usagePlanId).build()).items().asScala
-      .exists(k => k.id == apiKeyId)
-  }
+  private def usagePlanKeyExists(usagePlanId: String, apiKeyId: String): Boolean =
+    apiGatewayClient.getUsagePlanKeys(
+      GetUsagePlanKeysRequest.builder()
+        .usagePlanId(usagePlanId)
+        .build())
+      .items()
+      .asScala
+      .exists(usagePlanKey => usagePlanKey.id == apiKeyId)
 }
 
 case class UpsertApplicationRequest(applicationName: String, usagePlan: String, serverToken: String, apiNames: Seq[String])
