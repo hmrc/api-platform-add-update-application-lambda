@@ -1,5 +1,7 @@
 package uk.gov.hmrc.apiplatform.upsertapplication
 
+import java.util.UUID
+
 import com.amazonaws.services.lambda.runtime.events.SQSEvent
 import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
@@ -10,6 +12,7 @@ import software.amazon.awssdk.services.apigateway.model._
 import uk.gov.hmrc.aws_gateway_proxied_request_lambda.JsonMapper
 
 import scala.collection.JavaConversions._
+import scala.collection.JavaConverters._
 
 class AddApplicationHandlerSpec extends WordSpecLike with Matchers with JsonMapper {
 
@@ -35,7 +38,8 @@ class AddApplicationHandlerSpec extends WordSpecLike with Matchers with JsonMapp
         createUsagePlanRequestCaptor,
         applicationName,
         addApplicationHandler.NamedUsagePlans(usagePlanName)._1,
-        addApplicationHandler.NamedUsagePlans(usagePlanName)._2)
+        addApplicationHandler.NamedUsagePlans(usagePlanName)._2,
+        Seq())
       createAPIKeyRequestCorrectlyFormatted(createApiKeyRequestCaptor, applicationName, serverToken)
       createUsagePlanKeyRequestCorrectlyFormatted(createUsagePlanKeyRequestCaptor, usagePlanId, apiKeyId)
     }
@@ -61,7 +65,8 @@ class AddApplicationHandlerSpec extends WordSpecLike with Matchers with JsonMapp
         createUsagePlanRequestCaptor,
         applicationName,
         addApplicationHandler.NamedUsagePlans(usagePlanName)._1,
-        addApplicationHandler.NamedUsagePlans(usagePlanName)._2)
+        addApplicationHandler.NamedUsagePlans(usagePlanName)._2,
+        Seq())
       createAPIKeyRequestCorrectlyFormatted(createApiKeyRequestCaptor, applicationName, serverToken)
       createUsagePlanKeyRequestCorrectlyFormatted(createUsagePlanKeyRequestCaptor, usagePlanId, apiKeyId)
     }
@@ -87,7 +92,8 @@ class AddApplicationHandlerSpec extends WordSpecLike with Matchers with JsonMapp
         createUsagePlanRequestCaptor,
         applicationName,
         addApplicationHandler.NamedUsagePlans(usagePlanName)._1,
-        addApplicationHandler.NamedUsagePlans(usagePlanName)._2)
+        addApplicationHandler.NamedUsagePlans(usagePlanName)._2,
+        Seq())
       createAPIKeyRequestCorrectlyFormatted(createApiKeyRequestCaptor, applicationName, serverToken)
       createUsagePlanKeyRequestCorrectlyFormatted(createUsagePlanKeyRequestCaptor, usagePlanId, apiKeyId)
     }
@@ -113,9 +119,51 @@ class AddApplicationHandlerSpec extends WordSpecLike with Matchers with JsonMapp
         createUsagePlanRequestCaptor,
         applicationName,
         addApplicationHandler.NamedUsagePlans(usagePlanName)._1,
-        addApplicationHandler.NamedUsagePlans(usagePlanName)._2)
+        addApplicationHandler.NamedUsagePlans(usagePlanName)._2,
+        Seq())
       createAPIKeyRequestCorrectlyFormatted(createApiKeyRequestCaptor, applicationName, serverToken)
       createUsagePlanKeyRequestCorrectlyFormatted(createUsagePlanKeyRequestCaptor, usagePlanId, apiKeyId)
+    }
+
+    "add API stages to usage plan when APIs provided in the SQS record" in new NoMatchingUsagePlan {
+      val usagePlanName = "BRONZE"
+      val apis: Map[String, String] = Map("foo" -> UUID.randomUUID().toString, "bar" -> UUID.randomUUID().toString)
+
+      val sqsEvent = new SQSEvent()
+      sqsEvent.setRecords(List(buildAddApplicationRequest(applicationName, usagePlanName, serverToken, apis.keys)))
+
+      when(mockAPIGatewayClient.getRestApis(any[GetRestApisRequest])).thenReturn(GetRestApisResponse.builder()
+        .items(apis.map(api => RestApi.builder().id(api._2).name(api._1).build())).build())
+      val createUsagePlanRequestCaptor: ArgumentCaptor[CreateUsagePlanRequest] = ArgumentCaptor.forClass(classOf[CreateUsagePlanRequest])
+      when(mockAPIGatewayClient.createUsagePlan(createUsagePlanRequestCaptor.capture())).thenReturn(CreateUsagePlanResponse.builder().id(usagePlanId).build())
+      when(mockAPIGatewayClient.createApiKey(any[CreateApiKeyRequest])).thenReturn(CreateApiKeyResponse.builder().id(apiKeyId).build())
+      when(mockAPIGatewayClient.createUsagePlanKey(any[CreateUsagePlanKeyRequest])).thenReturn(CreateUsagePlanKeyResponse.builder().build())
+
+      addApplicationHandler handleInput(sqsEvent, mockContext)
+
+      createUsagePlanRequestCorrectlyFormatted(
+        createUsagePlanRequestCaptor,
+        applicationName,
+        addApplicationHandler.NamedUsagePlans(usagePlanName)._1,
+        addApplicationHandler.NamedUsagePlans(usagePlanName)._2,
+        apis.values)
+    }
+
+    "throw exception if API does not exist" in new NoMatchingUsagePlan {
+      val usagePlanName = "BRONZE"
+      val apis: Map[String, String] = Map("foo" -> UUID.randomUUID().toString, "bar" -> UUID.randomUUID().toString)
+
+      val sqsEvent = new SQSEvent()
+      sqsEvent.setRecords(List(buildAddApplicationRequest(applicationName, usagePlanName, serverToken, apis.keys)))
+
+      when(mockAPIGatewayClient.getRestApis(any[GetRestApisRequest])).thenReturn(GetRestApisResponse.builder().build())
+      val createUsagePlanRequestCaptor: ArgumentCaptor[CreateUsagePlanRequest] = ArgumentCaptor.forClass(classOf[CreateUsagePlanRequest])
+      when(mockAPIGatewayClient.createUsagePlan(createUsagePlanRequestCaptor.capture())).thenReturn(CreateUsagePlanResponse.builder().id(usagePlanId).build())
+      when(mockAPIGatewayClient.createApiKey(any[CreateApiKeyRequest])).thenReturn(CreateApiKeyResponse.builder().id(apiKeyId).build())
+      when(mockAPIGatewayClient.createUsagePlanKey(any[CreateUsagePlanKeyRequest])).thenReturn(CreateUsagePlanKeyResponse.builder().build())
+
+      val exception: NotFoundException = intercept[NotFoundException](addApplicationHandler handleInput(sqsEvent, mockContext))
+      exception.getMessage shouldBe "API 'foo' not found"
     }
 
     "create API Key and UsagePlanKey link if previous calls failed" in new ExistingUsagePlan {
@@ -237,11 +285,17 @@ class AddApplicationHandlerSpec extends WordSpecLike with Matchers with JsonMapp
     }
   }
 
-  def createUsagePlanRequestCorrectlyFormatted(argumentCaptor: ArgumentCaptor[CreateUsagePlanRequest], expectedApplicationName: String, expectedRateLimit: Double, expectedBurstLimit: Int): Unit = {
+  def createUsagePlanRequestCorrectlyFormatted(argumentCaptor: ArgumentCaptor[CreateUsagePlanRequest],
+                                               expectedApplicationName: String, expectedRateLimit: Double,
+                                               expectedBurstLimit: Int, expectedApiIds: Iterable[String]): Unit = {
     val capturedRequest: CreateUsagePlanRequest = argumentCaptor.getValue
     capturedRequest.name() shouldEqual expectedApplicationName
     capturedRequest.throttle().rateLimit() shouldEqual expectedRateLimit
     capturedRequest.throttle().burstLimit() shouldEqual expectedBurstLimit
+    if (expectedApiIds.nonEmpty) {
+      capturedRequest.apiStages().asScala.map(_.apiId()) should contain theSameElementsAs expectedApiIds
+      capturedRequest.apiStages().asScala.map(_.stage()) should contain only "current"
+    }
   }
 
   def createAPIKeyRequestCorrectlyFormatted(argumentCaptor: ArgumentCaptor[CreateApiKeyRequest], expectedApplicationName: String, expectedServerToken: String): Unit = {
