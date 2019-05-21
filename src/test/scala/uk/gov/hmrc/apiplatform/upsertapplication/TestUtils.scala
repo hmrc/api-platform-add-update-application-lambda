@@ -2,13 +2,13 @@ package uk.gov.hmrc.apiplatform.upsertapplication
 
 import java.util.UUID
 
-import com.amazonaws.services.lambda.runtime.{Context, LambdaLogger}
 import com.amazonaws.services.lambda.runtime.events.SQSEvent.SQSMessage
+import com.amazonaws.services.lambda.runtime.{Context, LambdaLogger}
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.when
-import software.amazon.awssdk.services.apigateway.ApiGatewayClient
-import software.amazon.awssdk.services.apigateway.model.{ApiKey, ApiStage, GetApiKeysRequest, GetApiKeysResponse, GetUsagePlanKeysRequest, GetUsagePlanKeysResponse, GetUsagePlanResponse, GetUsagePlansRequest, GetUsagePlansResponse, ThrottleSettings, UsagePlan, UsagePlanKey}
 import org.scalatest.mockito.MockitoSugar
+import software.amazon.awssdk.services.apigateway.ApiGatewayClient
+import software.amazon.awssdk.services.apigateway.model._
 
 import scala.collection.JavaConversions.seqAsJavaList
 
