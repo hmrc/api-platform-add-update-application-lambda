@@ -81,8 +81,19 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
       updateOperations
     }
 
+    def subscriptionUpdates(existingSubscriptions: Seq[ApiStage], requestedSubscriptions: Seq[String]): Seq[PatchOperation] = {
+      val requestedSubscriptionsAsApiStages = apiNamesToApiStages(requestedSubscriptions)
+      val missingSubscriptions: Set[ApiStage] = requestedSubscriptionsAsApiStages.toSet -- existingSubscriptions.toSet
+      val subscriptionsToRemove: Set[ApiStage] = existingSubscriptions.toSet -- requestedSubscriptionsAsApiStages.toSet
+
+      missingSubscriptions.map(ms => PatchOperation.builder().op(Op.ADD).path("/apiStages").value(s"${ms.apiId}:${ms.stage}").build()).toSeq ++
+        subscriptionsToRemove.map(str => PatchOperation.builder().op(Op.REMOVE).path("/apiStages").value(s"${str.apiId}:${str.stage}").build()).toSeq
+    }
+
     val existingUsagePlan: GetUsagePlanResponse = apiGatewayClient.getUsagePlan(GetUsagePlanRequest.builder().usagePlanId(usagePlanId).build())
-    val patchOperations = usagePlanUpdates(existingUsagePlan.throttle().rateLimit(), existingUsagePlan.throttle().burstLimit(), upsertRequest.usagePlan)
+    val patchOperations =
+      usagePlanUpdates(existingUsagePlan.throttle().rateLimit(), existingUsagePlan.throttle().burstLimit(), upsertRequest.usagePlan) ++
+        subscriptionUpdates(existingUsagePlan.apiStages().asScala, upsertRequest.apiNames)
 
     if (patchOperations.nonEmpty) {
       apiGatewayClient.updateUsagePlan(

@@ -7,7 +7,7 @@ import com.amazonaws.services.lambda.runtime.events.SQSEvent.SQSMessage
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.when
 import software.amazon.awssdk.services.apigateway.ApiGatewayClient
-import software.amazon.awssdk.services.apigateway.model.{ApiKey, GetApiKeysRequest, GetApiKeysResponse, GetUsagePlanKeysRequest, GetUsagePlanKeysResponse, GetUsagePlanResponse, GetUsagePlansRequest, GetUsagePlansResponse, ThrottleSettings, UsagePlan, UsagePlanKey}
+import software.amazon.awssdk.services.apigateway.model.{ApiKey, ApiStage, GetApiKeysRequest, GetApiKeysResponse, GetUsagePlanKeysRequest, GetUsagePlanKeysResponse, GetUsagePlanResponse, GetUsagePlansRequest, GetUsagePlansResponse, ThrottleSettings, UsagePlan, UsagePlanKey}
 import org.scalatest.mockito.MockitoSugar
 
 import scala.collection.JavaConversions.seqAsJavaList
@@ -52,7 +52,7 @@ trait Setup extends MockitoSugar {
           .build())
       .build()
 
-  def buildMatchingUsagePlanResponse(id: String, name: String, rateLimit: Double, burstLimit: Int): GetUsagePlanResponse =
+  def buildMatchingUsagePlanResponse(id: String, name: String, rateLimit: Double, burstLimit: Int, apiStages: Option[Seq[ApiStage]] = None): GetUsagePlanResponse =
     GetUsagePlanResponse.builder()
       .id(id)
       .name(name)
@@ -61,6 +61,7 @@ trait Setup extends MockitoSugar {
           .rateLimit(rateLimit)
           .burstLimit(burstLimit)
           .build())
+      .apiStages(apiStages.getOrElse(Seq.empty))
       .build()
 
   val usagePlanId: String = UUID.randomUUID().toString
