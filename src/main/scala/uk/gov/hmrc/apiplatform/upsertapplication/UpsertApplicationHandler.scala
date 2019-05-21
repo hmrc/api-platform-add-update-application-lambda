@@ -86,6 +86,8 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
       val missingSubscriptions: Set[ApiStage] = requestedSubscriptionsAsApiStages.toSet -- existingSubscriptions.toSet
       val subscriptionsToRemove: Set[ApiStage] = existingSubscriptions.toSet -- requestedSubscriptionsAsApiStages.toSet
 
+      logger.log(s"Subscriptions to Add: [$missingSubscriptions]; Subscriptions to Remove: [$subscriptionsToRemove]")
+
       missingSubscriptions.map(ms => PatchOperation.builder().op(Op.ADD).path("/apiStages").value(s"${ms.apiId}:${ms.stage}").build()).toSeq ++
         subscriptionsToRemove.map(str => PatchOperation.builder().op(Op.REMOVE).path("/apiStages").value(s"${str.apiId}:${str.stage}").build()).toSeq
     }
