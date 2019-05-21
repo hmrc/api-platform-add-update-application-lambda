@@ -168,12 +168,14 @@ class AddApplicationHandlerSpec extends WordSpecLike with Matchers with JsonMapp
 
     "create API Key and UsagePlanKey link if previous calls failed" in new ExistingUsagePlan {
       val usagePlanName = "BRONZE"
+      val currentRateLimit: Double = addApplicationHandler.NamedUsagePlans(usagePlanName)._1
+      val currentBurstLimit: Int = addApplicationHandler.NamedUsagePlans(usagePlanName)._2
 
       val sqsEvent = new SQSEvent()
       sqsEvent.setRecords(List(buildAddApplicationRequest(applicationName, usagePlanName, serverToken)))
 
-      val updateUsagePlanRequestCaptor: ArgumentCaptor[UpdateUsagePlanRequest] = ArgumentCaptor.forClass(classOf[UpdateUsagePlanRequest])
-      when(mockAPIGatewayClient.updateUsagePlan(updateUsagePlanRequestCaptor.capture())).thenReturn(UpdateUsagePlanResponse.builder().id(usagePlanId).build())
+      when(mockAPIGatewayClient.getUsagePlan(any[GetUsagePlanRequest]))
+        .thenReturn(buildMatchingUsagePlanResponse(usagePlanId, applicationName, currentRateLimit, currentBurstLimit))
 
       val createApiKeyRequestCaptor: ArgumentCaptor[CreateApiKeyRequest] = ArgumentCaptor.forClass(classOf[CreateApiKeyRequest])
       when(mockAPIGatewayClient.createApiKey(createApiKeyRequestCaptor.capture())).thenReturn(CreateApiKeyResponse.builder().id(apiKeyId).build())
@@ -183,14 +185,7 @@ class AddApplicationHandlerSpec extends WordSpecLike with Matchers with JsonMapp
 
       addApplicationHandler handleInput(sqsEvent, mockContext)
 
-      val capturedUpdateRequest: UpdateUsagePlanRequest = updateUsagePlanRequestCaptor.getValue
-      capturedUpdateRequest.usagePlanId() shouldEqual usagePlanId
-      capturedUpdateRequest.patchOperations() should have length 2
-
-      capturedUpdateRequest.patchOperations() should contain only (
-        PatchOperation.builder().op(Op.REPLACE).path("/throttle/rateLimit").value(addApplicationHandler.NamedUsagePlans(usagePlanName)._1.toString).build(),
-        PatchOperation.builder().op(Op.REPLACE).path("/throttle/burstLimit").value(addApplicationHandler.NamedUsagePlans(usagePlanName)._2.toString).build()
-      )
+      verify(mockAPIGatewayClient, times(0)).updateUsagePlan(any[UpdateUsagePlanRequest])
 
       createAPIKeyRequestCorrectlyFormatted(createApiKeyRequestCaptor, applicationName, serverToken)
       createUsagePlanKeyRequestCorrectlyFormatted(createUsagePlanKeyRequestCaptor, usagePlanId, apiKeyId)
@@ -198,12 +193,14 @@ class AddApplicationHandlerSpec extends WordSpecLike with Matchers with JsonMapp
 
     "create UsagePlanKey link if previous call failed" in new ExistingUnlinkedUsagePlanAndAPIKey {
       val usagePlanName = "BRONZE"
+      val currentRateLimit: Double = addApplicationHandler.NamedUsagePlans(usagePlanName)._1
+      val currentBurstLimit: Int = addApplicationHandler.NamedUsagePlans(usagePlanName)._2
 
       val sqsEvent = new SQSEvent()
       sqsEvent.setRecords(List(buildAddApplicationRequest(applicationName, usagePlanName, serverToken)))
 
-      val updateUsagePlanRequestCaptor: ArgumentCaptor[UpdateUsagePlanRequest] = ArgumentCaptor.forClass(classOf[UpdateUsagePlanRequest])
-      when(mockAPIGatewayClient.updateUsagePlan(updateUsagePlanRequestCaptor.capture())).thenReturn(UpdateUsagePlanResponse.builder().id(usagePlanId).build())
+      when(mockAPIGatewayClient.getUsagePlan(any[GetUsagePlanRequest]))
+        .thenReturn(buildMatchingUsagePlanResponse(usagePlanId, applicationName, currentRateLimit, currentBurstLimit))
 
       val createApiKeyRequestCaptor: ArgumentCaptor[CreateApiKeyRequest] = ArgumentCaptor.forClass(classOf[CreateApiKeyRequest])
       when(mockAPIGatewayClient.createApiKey(createApiKeyRequestCaptor.capture())).thenReturn(CreateApiKeyResponse.builder().id(apiKeyId).build())
@@ -213,15 +210,7 @@ class AddApplicationHandlerSpec extends WordSpecLike with Matchers with JsonMapp
 
       addApplicationHandler handleInput(sqsEvent, mockContext)
 
-      val capturedUpdateRequest: UpdateUsagePlanRequest = updateUsagePlanRequestCaptor.getValue
-      capturedUpdateRequest.usagePlanId() shouldEqual usagePlanId
-      capturedUpdateRequest.patchOperations() should have length 2
-
-      capturedUpdateRequest.patchOperations() should contain only (
-        PatchOperation.builder().op(Op.REPLACE).path("/throttle/rateLimit").value(addApplicationHandler.NamedUsagePlans(usagePlanName)._1.toString).build(),
-        PatchOperation.builder().op(Op.REPLACE).path("/throttle/burstLimit").value(addApplicationHandler.NamedUsagePlans(usagePlanName)._2.toString).build()
-      )
-
+      verify(mockAPIGatewayClient, times(0)).updateUsagePlan(any[UpdateUsagePlanRequest])
       verify(mockAPIGatewayClient, times(0)).createApiKey(any[CreateApiKeyRequest])
       createUsagePlanKeyRequestCorrectlyFormatted(createUsagePlanKeyRequestCaptor, usagePlanId, apiKeyId)
     }
@@ -238,24 +227,37 @@ class AddApplicationHandlerSpec extends WordSpecLike with Matchers with JsonMapp
     }
 
     "throw exception if call to create API Key fails" in new ExistingUsagePlan {
+      val usagePlanName = "BRONZE"
+      val currentRateLimit: Double = addApplicationHandler.NamedUsagePlans(usagePlanName)._1
+      val currentBurstLimit: Int = addApplicationHandler.NamedUsagePlans(usagePlanName)._2
+
       val exceptionToThrow: Exception = AwsServiceException.builder().build()
-      when(mockAPIGatewayClient.updateUsagePlan(any[UpdateUsagePlanRequest])).thenReturn(UpdateUsagePlanResponse.builder().id(usagePlanId).build())
       when(mockAPIGatewayClient.createApiKey(any[CreateApiKeyRequest])).thenThrow(exceptionToThrow)
 
       val sqsEvent = new SQSEvent()
-      sqsEvent.setRecords(List(buildAddApplicationRequest(applicationName, "BRONZE", serverToken)))
+      sqsEvent.setRecords(List(buildAddApplicationRequest(applicationName, usagePlanName, serverToken)))
+
+      when(mockAPIGatewayClient.getUsagePlan(any[GetUsagePlanRequest]))
+        .thenReturn(buildMatchingUsagePlanResponse(usagePlanId, applicationName, currentRateLimit, currentBurstLimit))
 
       val thrownException: Exception = intercept[Exception](addApplicationHandler handleInput(sqsEvent, mockContext))
       thrownException should be theSameInstanceAs exceptionToThrow
     }
 
     "throw exception if call to link Usage Plan and API Key fails" in new ExistingUnlinkedUsagePlanAndAPIKey {
+      val usagePlanName = "BRONZE"
+      val currentRateLimit: Double = addApplicationHandler.NamedUsagePlans(usagePlanName)._1
+      val currentBurstLimit: Int = addApplicationHandler.NamedUsagePlans(usagePlanName)._2
+
       val exceptionToThrow: Exception = AwsServiceException.builder().build()
       when(mockAPIGatewayClient.updateUsagePlan(any[UpdateUsagePlanRequest])).thenReturn(UpdateUsagePlanResponse.builder().id(usagePlanId).build())
       when(mockAPIGatewayClient.createUsagePlanKey(any[CreateUsagePlanKeyRequest])).thenThrow(exceptionToThrow)
 
       val sqsEvent = new SQSEvent()
-      sqsEvent.setRecords(List(buildAddApplicationRequest(applicationName, "BRONZE", serverToken)))
+      sqsEvent.setRecords(List(buildAddApplicationRequest(applicationName, usagePlanName, serverToken)))
+
+      when(mockAPIGatewayClient.getUsagePlan(any[GetUsagePlanRequest]))
+        .thenReturn(buildMatchingUsagePlanResponse(usagePlanId, applicationName, currentRateLimit, currentBurstLimit))
 
       val thrownException: Exception = intercept[Exception](addApplicationHandler handleInput(sqsEvent, mockContext))
       thrownException should be theSameInstanceAs exceptionToThrow

@@ -9,6 +9,7 @@ import uk.gov.hmrc.api_platform_manage_api.AwsIdRetriever
 import uk.gov.hmrc.aws_gateway_proxied_request_lambda.SqsHandler
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable.ListBuffer
 
 class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, environment: Map[String, String]) extends SqsHandler with AwsIdRetriever {
 
@@ -26,7 +27,7 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
   }
 
   override def handleInput(input: SQSEvent, context: Context): Unit = {
-    val logger: LambdaLogger = context.getLogger
+    implicit val logger: LambdaLogger = context.getLogger
     if (input.getRecords.size != 1) {
       throw new IllegalArgumentException(s"Invalid number of records: ${input.getRecords.size}")
     }
@@ -35,7 +36,7 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
 
     val usagePlanId: String = getAwsUsagePlanIdByApplicationName(upsertRequest.applicationName) match {
       case Some(id) => logger.log(s"Usage Plan for Application [${upsertRequest.applicationName}] already exists - updating"); updateApplication(id, upsertRequest)
-      case None => logger.log(s"Creating Usage Plan for Application [${upsertRequest.applicationName}]"); createApplication(upsertRequest, logger)
+      case None => logger.log(s"Creating Usage Plan for Application [${upsertRequest.applicationName}]"); createApplication(upsertRequest)
     }
 
     val apiKeyId: String = getAwsApiKeyIdByApplicationName(upsertRequest.applicationName) match {
@@ -51,30 +52,77 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
     }
   }
 
-  private def updateApplication(usagePlanId: String, upsertRequest: UpsertApplicationRequest): String = {
-    val patchOperations = List(
-      PatchOperation.builder().op(Op.REPLACE).path("/throttle/rateLimit").value(NamedUsagePlans(upsertRequest.usagePlan)._1.toString).build(),
-      PatchOperation.builder().op(Op.REPLACE).path("/throttle/burstLimit").value(NamedUsagePlans(upsertRequest.usagePlan)._2.toString).build())
+  private def updateApplication(usagePlanId: String, upsertRequest: UpsertApplicationRequest)(implicit logger: LambdaLogger): String = {
+    def usagePlanUpdates(existingRateLimit: Double, existingBurstLimit: Int, requestedUsagePlan: String): Seq[PatchOperation] = {
+      val updateOperations: ListBuffer[PatchOperation] = ListBuffer[PatchOperation]()
 
-    val updateRequest = UpdateUsagePlanRequest.builder().usagePlanId(usagePlanId).patchOperations(patchOperations.asJava).build()
+      val requestedRateLimit: Double = NamedUsagePlans(requestedUsagePlan)._1
+      if (requestedRateLimit != existingRateLimit) {
+        logger.log(s"Updating Application Rate Limit from [$existingRateLimit] to [$requestedRateLimit]")
+        updateOperations +=
+          PatchOperation.builder()
+            .op(Op.REPLACE)
+            .path("/throttle/rateLimit")
+            .value(requestedRateLimit.toString)
+            .build()
+      }
 
-    val updateResponse = apiGatewayClient.updateUsagePlan(updateRequest)
-    updateResponse.id()
+      val requestedBurstLimit: Int = NamedUsagePlans(requestedUsagePlan)._2
+      if (requestedBurstLimit != existingBurstLimit) {
+        logger.log(s"Updating Application Burst Limit from [$existingBurstLimit] to [$requestedBurstLimit]")
+        updateOperations +=
+          PatchOperation.builder()
+            .op(Op.REPLACE)
+            .path("/throttle/burstLimit")
+            .value(requestedBurstLimit.toString)
+            .build()
+      }
+
+      updateOperations
+    }
+
+    def subscriptionUpdates(existingSubscriptions: Seq[ApiStage], requestedSubscriptions: Seq[String]): Seq[PatchOperation] = {
+      val requestedSubscriptionsAsApiStages = apiNamesToApiStages(requestedSubscriptions)
+      val missingSubscriptions: Set[ApiStage] = requestedSubscriptionsAsApiStages.toSet -- existingSubscriptions.toSet
+      val subscriptionsToRemove: Set[ApiStage] = existingSubscriptions.toSet -- requestedSubscriptionsAsApiStages.toSet
+
+      logger.log(s"Subscriptions to Add: [$missingSubscriptions]; Subscriptions to Remove: [$subscriptionsToRemove]")
+
+      missingSubscriptions.map(ms => PatchOperation.builder().op(Op.ADD).path("/apiStages").value(s"${ms.apiId}:${ms.stage}").build()).toSeq ++
+        subscriptionsToRemove.map(str => PatchOperation.builder().op(Op.REMOVE).path("/apiStages").value(s"${str.apiId}:${str.stage}").build()).toSeq
+    }
+
+    val existingUsagePlan: GetUsagePlanResponse = apiGatewayClient.getUsagePlan(GetUsagePlanRequest.builder().usagePlanId(usagePlanId).build())
+    val patchOperations =
+      usagePlanUpdates(existingUsagePlan.throttle().rateLimit(), existingUsagePlan.throttle().burstLimit(), upsertRequest.usagePlan) ++
+        subscriptionUpdates(existingUsagePlan.apiStages().asScala, upsertRequest.apiNames)
+
+    if (patchOperations.nonEmpty) {
+      apiGatewayClient.updateUsagePlan(
+        UpdateUsagePlanRequest.builder()
+          .usagePlanId(usagePlanId)
+          .patchOperations(patchOperations.asJava)
+          .build())
+    } else {
+      logger.log(s"No updates to perform on Application [${upsertRequest.applicationName}]")
+    }
+
+    usagePlanId
   }
 
-  private def createApplication(upsertRequest: UpsertApplicationRequest, logger: LambdaLogger): String = {
+  private def createApplication(upsertRequest: UpsertApplicationRequest)(implicit logger: LambdaLogger): String = {
     val usagePlanRequest =
       CreateUsagePlanRequest.builder()
         .name(upsertRequest.applicationName)
         .throttle(buildThrottleSettings(upsertRequest.usagePlan))
-        .apiStages(apiNamesToApiStages(upsertRequest.apiNames, logger).asJava)
+        .apiStages(apiNamesToApiStages(upsertRequest.apiNames).asJava)
         .build()
 
     val response = apiGatewayClient.createUsagePlan(usagePlanRequest)
     response.id()
   }
 
-  private def apiNamesToApiStages(apiNames: Seq[String], logger: LambdaLogger): Seq[ApiStage] = {
+  private def apiNamesToApiStages(apiNames: Seq[String])(implicit logger: LambdaLogger): Seq[ApiStage] = {
     apiNames map { apiName =>
       getAwsRestApiIdByApiName(apiName, logger) match {
         case Some(apiId) => ApiStage.builder().apiId(apiId).stage("current").build()
@@ -113,10 +161,14 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
     apiGatewayClient.createUsagePlanKey(createUsagePlanKeyRequest)
   }
 
-  private def usagePlanKeyExists(usagePlanId: String, apiKeyId: String): Boolean = {
-    apiGatewayClient.getUsagePlanKeys(GetUsagePlanKeysRequest.builder().usagePlanId(usagePlanId).build()).items().asScala
-      .exists(k => k.id == apiKeyId)
-  }
+  private def usagePlanKeyExists(usagePlanId: String, apiKeyId: String): Boolean =
+    apiGatewayClient.getUsagePlanKeys(
+      GetUsagePlanKeysRequest.builder()
+        .usagePlanId(usagePlanId)
+        .build())
+      .items()
+      .asScala
+      .exists(usagePlanKey => usagePlanKey.id == apiKeyId)
 }
 
 case class UpsertApplicationRequest(applicationName: String, usagePlan: String, serverToken: String, apiNames: Seq[String])
