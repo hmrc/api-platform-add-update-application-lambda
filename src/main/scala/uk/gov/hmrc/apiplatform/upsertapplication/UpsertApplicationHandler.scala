@@ -110,7 +110,7 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
     usagePlanId
   }
 
-  private def createApplication(upsertRequest: UpsertApplicationRequest)(implicit logger: LambdaLogger): String = {
+  private def createApplication(upsertRequest: UpsertApplicationRequest): String = {
     val usagePlanRequest =
       CreateUsagePlanRequest.builder()
         .name(upsertRequest.applicationName)
@@ -122,9 +122,9 @@ class UpsertApplicationHandler(override val apiGatewayClient: ApiGatewayClient, 
     response.id()
   }
 
-  private def apiNamesToApiStages(apiNames: Seq[String])(implicit logger: LambdaLogger): Seq[ApiStage] = {
+  private def apiNamesToApiStages(apiNames: Seq[String]): Seq[ApiStage] = {
     apiNames map { apiName =>
-      getAwsRestApiIdByApiName(apiName, logger) match {
+      getAwsRestApiIdByApiName(apiName) match {
         case Some(apiId) => ApiStage.builder().apiId(apiId).stage("current").build()
         case _ => throw NotFoundException.builder().message(s"API '$apiName' not found").build()
       }
