@@ -1,7 +1,7 @@
 
 # api-platform-add-update-application-lambda
 
-This is a placeholder README.md for a new repository
+The Lambda in this repository has been deprecated in favour of the [Update API Key Lambda](https://github.com/hmrc/api-platform-update-api-key-lambda)
 
 ### License
 
